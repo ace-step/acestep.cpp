@@ -108,7 +108,7 @@ static bool cond_ggml_load(CondGGML * m, const char * gguf_path) {
     for (int i = 0; i < m->lyric_cfg.n_layers; i++) {
         char prefix[128];
         snprintf(prefix, sizeof(prefix), "encoder.lyric_encoder.layers.%d", i);
-        qwen3_load_layer(&m->wctx, gf, &m->lyric_layers[i], prefix);
+        qwen3_load_layer(&m->wctx, gf, &m->lyric_layers[i], prefix, i);
     }
 
     // Timbre encoder
@@ -118,7 +118,7 @@ static bool cond_ggml_load(CondGGML * m, const char * gguf_path) {
     for (int i = 0; i < m->timbre_cfg.n_layers; i++) {
         char prefix[128];
         snprintf(prefix, sizeof(prefix), "encoder.timbre_encoder.layers.%d", i);
-        qwen3_load_layer(&m->wctx, gf, &m->timbre_layers[i], prefix);
+        qwen3_load_layer(&m->wctx, gf, &m->timbre_layers[i], prefix, i);
     }
 
     // Text projector + null condition
