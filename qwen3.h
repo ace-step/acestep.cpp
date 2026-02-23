@@ -317,6 +317,8 @@ static bool qwen3_load_text_encoder(Qwen3GGML * m, const char * gguf_path) {
     m->embed_tokens = gf_load_tensor(&m->wctx, gf, "embed_tokens.weight");
     m->final_norm   = gf_load_tensor_f32(&m->wctx, gf, "norm.weight");
 
+    fprintf(stderr, "[Load] TextEncoder: %dL, H=%d, Nh=%d/%d\n",
+            m->cfg.n_layers, m->cfg.hidden_size, m->cfg.n_heads, m->cfg.n_kv_heads);
     for (int i = 0; i < m->cfg.n_layers; i++) {
         char prefix[64];
         snprintf(prefix, sizeof(prefix), "layers.%d", i);
@@ -329,8 +331,6 @@ static bool qwen3_load_text_encoder(Qwen3GGML * m, const char * gguf_path) {
     }
     gf_close(&gf);
 
-    fprintf(stderr, "[Load] TextEncoder: %dL, H=%d, Nh=%d/%d\n",
-            m->cfg.n_layers, m->cfg.hidden_size, m->cfg.n_heads, m->cfg.n_kv_heads);
     return true;
 }
 
