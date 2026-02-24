@@ -243,7 +243,7 @@ int main(int argc, char ** argv) {
         const char * bpm      = bpm_str;
         const char * keyscale = req.keyscale.empty() ? "N/A" : req.keyscale.c_str();
         const char * timesig  = req.timesignature.empty() ? "N/A" : req.timesignature.c_str();
-        const char * language = req.vocal_language.empty() ? "en" : req.vocal_language.c_str();
+        const char * language = req.vocal_language.empty() ? "unknown" : req.vocal_language.c_str();
         float duration        = req.duration > 0 ? req.duration : 30.0f;
         long long seed        = req.seed;
         int num_steps         = req.inference_steps > 0 ? req.inference_steps : 8;
