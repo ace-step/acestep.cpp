@@ -405,11 +405,6 @@ int main(int argc, char ** argv) {
 
         debug_dump_2d(&dbg, "enc_hidden", enc_hidden.data(), enc_S, 2048);
 
-        // Context building
-        // Silence latent for this T
-        std::vector<float> silence(Oc * T);
-        memcpy(silence.data(), silence_full.data(), (size_t)(Oc * T) * sizeof(float));
-
         // Decode audio codes if provided
         int decoded_T = 0;
         std::vector<float> decoded_latents;
@@ -444,11 +439,13 @@ int main(int argc, char ** argv) {
         }
 
         // Build single context: [T, ctx_ch] = src_latents[64] + mask_ones[64]
+        // src_latents = decoded_codes[0:decoded_T] + silence_latent[0:T-decoded_T]
+        // Padding reads silence from frame 0 (not from decoded_T), matching reference implementation
         std::vector<float> context_single(T * ctx_ch);
         for (int t = 0; t < T; t++) {
             const float * src = (t < decoded_T)
                 ? decoded_latents.data() + t * Oc
-                : silence.data() + t * Oc;
+                : silence_full.data() + (t - decoded_T) * Oc;
             for (int c = 0; c < Oc; c++)
                 context_single[t * ctx_ch + c] = src[c];
             for (int c = 0; c < Oc; c++)
