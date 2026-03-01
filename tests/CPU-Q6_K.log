@@ -1,0 +1,54 @@
+[Request] Loaded request0.json
+[Turbo] steps=8, shift=3.0 | acestep-v15-turbo-Q6_K.gguf
+[GGML] Running acestep-v15-turbo-Q6_K.gguf...
+[GGML] Done, 47 dump files
+[Python] Initializing acestep-v15-turbo...
+[Python] Generating (acestep-v15-turbo, 8 steps)...
+Using precomputed LM hints
+Using precomputed LM hints
+[Python] Wrote python-turbo/output.wav: 4166400 samples (86.80s @ 48kHz stereo)
+[Python] Done, 40 dump files
+[Turbo] Cosine similarities GGML vs Python
+  stage                          GGML vs Python
+  text_hidden                          0.999816
+  lyric_embed                          1.000000
+  enc_hidden                           0.999634
+  detok_output                         0.999927
+  context                              0.999954
+  noise                                1.000000
+  temb_t                               0.999986
+  hidden_after_proj_in                 0.999975
+  enc_after_cond_emb                   0.999619
+  layer0_sa_output                     0.999718
+  hidden_after_layer0                  0.999827
+  hidden_after_layer6                  0.999788
+  hidden_after_layer12                 0.998843
+  hidden_after_layer18                 0.995848
+  hidden_after_layer23                 0.992196
+  dit_step0_vt                         0.971124
+  dit_step0_xt                         0.999936
+  dit_step1_vt                         0.975111
+  dit_step1_xt                         0.999802
+  dit_step2_vt                         0.978218
+  dit_step2_xt                         0.999477
+  dit_step3_vt                         0.977576
+  dit_step3_xt                         0.998723
+  dit_step4_vt                         0.973938
+  dit_step4_xt                         0.996945
+  dit_step5_vt                         0.969356
+  dit_step5_xt                         0.992753
+  dit_step6_vt                         0.965671
+  dit_step6_xt                         0.984569
+  dit_step7_vt                         0.958147
+  dit_x0                               0.972312
+  vae_audio                            0.891768
+  vae_audio (STFT cosine)              0.969085
+[Turbo] Error growth GGML vs Python
+  stage                         cos    max_err   mean_err     mean_A      std_A     mean_B      std_B
+  dit_step0_xt             0.999936   0.151952   0.007283  -0.002271   0.972870  -0.002342   0.972003
+  dit_step1_xt             0.999802   0.296519   0.012516  -0.005212   0.942575  -0.005313   0.941730
+  dit_step2_xt             0.999477   0.478400   0.019283  -0.009184   0.908992  -0.009311   0.908527
+  dit_step3_xt             0.998723   0.734609   0.028810  -0.014535   0.873457  -0.014577   0.873624
+  dit_step4_xt             0.996945   1.045720   0.042804  -0.021712   0.841447  -0.021660   0.841995
+  dit_step5_xt             0.992753   1.512605   0.064324  -0.032020   0.824620  -0.032109   0.824593
+  dit_step6_xt             0.984569   2.166596   0.096699  -0.046604   0.855715  -0.046482   0.855546
