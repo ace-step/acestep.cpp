@@ -20,13 +20,17 @@
 #ifndef AUDIO_IO_MP3DEC_IMPL
 #    define AUDIO_IO_MP3DEC_IMPL
 #    define MINIMP3_IMPLEMENTATION
-#    ifdef __GNUC__
+#    ifdef _MSC_VER
+#        pragma warning(push, 0)
+#    elif defined(__GNUC__)
 #        pragma GCC diagnostic push
 #        pragma GCC diagnostic ignored "-Wconversion"
 #        pragma GCC diagnostic ignored "-Wsign-conversion"
 #    endif
 #    include "vendor/minimp3/minimp3.h"
-#    ifdef __GNUC__
+#    ifdef _MSC_VER
+#        pragma warning(pop)
+#    elif defined(__GNUC__)
 #        pragma GCC diagnostic pop
 #    endif
 #    undef MINIMP3_IMPLEMENTATION
