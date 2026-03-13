@@ -6,7 +6,6 @@
 // qwen3.h, qwen3-lm.h, cond.h, dit.h, vae.h.
 
 #include "ggml-backend.h"
-#include "ggml-cpu.h"
 #ifdef ACESTEP_HAVE_CUDA
 // Query compute capability without pulling in cuda_runtime.h.
 // cudaDeviceGetAttribute takes an int enum value; we pass the raw constants.
@@ -45,23 +44,34 @@ static BackendPair backend_init(const char * label) {
         fprintf(stderr, "[Load] FATAL: no backend available\n");
         exit(1);
     }
+    bool best_is_cpu = (strcmp(ggml_backend_name(bp.backend), "CPU") == 0);
     int n_threads = (int) std::thread::hardware_concurrency() / 2;
     if (n_threads < 1) {
         n_threads = 1;
     }
-    // [GGML] If best backend is already CPU, reuse it (avoid 2 CPU instances
-    // where only one gets the thread count)
-    bool best_is_cpu = (strcmp(ggml_backend_name(bp.backend), "CPU") == 0);
-    if (best_is_cpu) {
-        bp.cpu_backend = bp.backend;
-        ggml_backend_cpu_set_n_threads(bp.backend, n_threads);
-    } else {
-        bp.cpu_backend = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, NULL);
-        if (!bp.cpu_backend) {
-            fprintf(stderr, "[Load] FATAL: failed to init CPU backend\n");
-            exit(1);
+    // Initialize CPU backend with explicit thread count
+    char params[64];
+    snprintf(params, sizeof(params), "n_threads=%d", n_threads);
+    auto init_cpu_backend = [&]() -> ggml_backend_t {
+        ggml_backend_dev_t cpu_dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+        if (cpu_dev) {
+            if (ggml_backend_t cpu = ggml_backend_dev_init(cpu_dev, params)) {
+                return cpu;
+            }
         }
-        ggml_backend_cpu_set_n_threads(bp.cpu_backend, n_threads);
+        return ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, params);
+    };
+
+    if (best_is_cpu) {
+        ggml_backend_free(bp.backend);
+        bp.backend = init_cpu_backend();
+        bp.cpu_backend = bp.backend;
+    } else {
+        bp.cpu_backend = init_cpu_backend();
+    }
+    if (!bp.cpu_backend) {
+        fprintf(stderr, "[Load] FATAL: failed to init CPU backend\n");
+        exit(1);
     }
     fprintf(stderr, "[Load] %s backend: %s (CPU threads: %d)\n", label, ggml_backend_name(bp.backend), n_threads);
 

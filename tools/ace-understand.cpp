@@ -28,6 +28,7 @@
 #include <cstring>
 #include <random>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -390,7 +391,24 @@ int main(int argc, char ** argv) {
         // Tokenizer weights live in the DiT GGUF (prefix "tokenizer.")
         Timer          t_tok;
         TokGGML        tok    = {};
-        ggml_backend_t be_tok = ggml_backend_cpu_init();
+        ggml_backend_dev_t dev_cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+        ggml_backend_t be_tok = NULL;
+        int n_threads = (int) std::thread::hardware_concurrency() / 2;
+        if (n_threads < 1) {
+            n_threads = 1;
+        }
+        char params[64];
+        snprintf(params, sizeof(params), "n_threads=%d", n_threads);
+        if (dev_cpu) {
+            be_tok = ggml_backend_dev_init(dev_cpu, params);
+        }
+        if (!be_tok) {
+            be_tok = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, params);
+        }
+        if (!be_tok) {
+            fprintf(stderr, "[Tok] FATAL: failed to init CPU backend\n");
+            return 1;
+        }
         if (!tok_ggml_load(&tok, dit_gguf, be_tok, be_tok)) {
             fprintf(stderr, "[Tok] FATAL: load failed\n");
             ggml_backend_free(be_tok);
