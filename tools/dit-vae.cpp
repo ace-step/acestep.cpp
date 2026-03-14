@@ -530,14 +530,26 @@ int main(int argc, char ** argv) {
         }
         fprintf(stderr, "[Load] ConditionEncoder: %.1f ms\n", timer.ms());
 
-        // Silence feats for timbre input: first 750 frames (30s @ 25Hz)
+        // Timbre input: source latents when available, silence otherwise
         const int          S_ref = 750;
-        std::vector<float> silence_feats(S_ref * 64);
-        memcpy(silence_feats.data(), silence_full.data(), S_ref * 64 * sizeof(float));
+        std::vector<float> timbre_feats(S_ref * 64);
+        if (have_cover) {
+            int copy_n = T_cover < S_ref ? T_cover : S_ref;
+            memcpy(timbre_feats.data(), cover_latents.data(), (size_t) copy_n * 64 * sizeof(float));
+            if (copy_n < S_ref) {
+                memcpy(timbre_feats.data() + (size_t) copy_n * 64,
+                       silence_full.data() + (size_t) copy_n * 64,
+                       (size_t) (S_ref - copy_n) * 64 * sizeof(float));
+            }
+            fprintf(stderr, "[Timbre] Using source latents (%d frames, %.1fs)\n",
+                    copy_n, (float) copy_n / 25.0f);
+        } else {
+            memcpy(timbre_feats.data(), silence_full.data(), S_ref * 64 * sizeof(float));
+        }
 
         timer.reset();
         std::vector<float> enc_hidden;
-        cond_ggml_forward(&cond, text_hidden.data(), S_text, lyric_embed.data(), S_lyric, silence_feats.data(), S_ref,
+        cond_ggml_forward(&cond, text_hidden.data(), S_text, lyric_embed.data(), S_lyric, timbre_feats.data(), S_ref,
                           enc_hidden, &enc_S);
         fprintf(stderr, "[Encode] ConditionEncoder: %.1f ms, enc_S=%d\n", timer.ms(), enc_S);
 
