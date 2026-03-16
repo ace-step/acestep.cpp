@@ -351,7 +351,6 @@ bool request_write(const AceRequest * r, const char * path) {
     fprintf(f, "  \"vocal_language\": \"%s\",\n", json_escape(r->vocal_language).c_str());
     fprintf(f, "  \"seed\": %lld,\n", (long long) r->seed);
     fprintf(f, "  \"batch_size\": %d,\n", r->batch_size);
-    fprintf(f, "  \"batch_size\": %d,\n", r->batch_size);
     fprintf(f, "  \"lm_temperature\": %.2f,\n", r->lm_temperature);
     fprintf(f, "  \"lm_cfg_scale\": %.1f,\n", r->lm_cfg_scale);
     fprintf(f, "  \"lm_top_p\": %.2f,\n", r->lm_top_p);
