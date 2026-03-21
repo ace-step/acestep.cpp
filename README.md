@@ -571,7 +571,7 @@ Server:
   --host <addr>           Listen address (default: 127.0.0.1)
   --port <N>              Listen port (default: 8080)
   --max-batch <N>         LM/synth batch limit (default: 1)
-  --max-queue <N>         Global queue depth (default: 4)
+  --sleep <N>             Unload models after N sec. (default: 0 = off)
 
 Debug:
   --no-fsm                Disable FSM constrained decoding
@@ -619,13 +619,14 @@ Audio input mode requires `--lm` plus `--dit --vae`. Codes-only mode
 requires just `--lm`.
 
 **GET /health** returns server status:
-`{"status":"ok","queue":N,"max_queue":N,"max_batch":N,"pipelines":["lm","synth","understand"]}`
+`{"status":"ok","max_batch":N,"sleep":N,"pipelines":["lm","synth","understand"]}`
 
+Pipelines show `"name:sleeping"` when unloaded by `--sleep`.
 The `pipelines` array lists the active endpoints based on which models
 were loaded. Endpoints not in the list return 501.
 
 Error responses are JSON: `{"error":"message"}` with 400, 500, 501, or
-503 status. 503 includes `Retry-After` header and queue counts.
+503 status. 503 includes a `Retry-After` header.
 
 ### Concurrency
 
@@ -634,9 +635,14 @@ concurrently with /lm on the GPU (disjoint models, disjoint memory).
 /lm and /understand always share a mutex because they use the same
 Qwen3 KV cache. When only one group is loaded, everything is serial.
 
-A global queue tracks total requests in flight (waiting + running). When
-full, the server returns 503 with a `Retry-After` header and queue status
-in the JSON body. Clients can poll `/health` to monitor queue depth.
+Each handler uses `try_lock`: if the GPU is busy, the client gets an
+instant 503 with `Retry-After`. No request ever blocks waiting for
+another to finish.
+
+`--sleep N` unloads models after N seconds with no requests. The next
+request reloads from disk (a few seconds on NVMe). If reload fails, the
+process exits (let systemd/docker restart it). `--sleep 0` disables
+this (default).
 
 Request bodies are limited to 120 MB (enough for a 10-minute WAV upload
 via multipart).
