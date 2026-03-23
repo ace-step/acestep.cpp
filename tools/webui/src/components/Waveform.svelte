@@ -17,10 +17,6 @@
 	let url: string | null = null;
 	let raf = 0;
 	let dragging = false;
-
-	// cached at setup for draw()
-	let colorDim = '';
-	let colorPlay = '';
 	let cw = 0;
 	let ch = 0;
 
@@ -31,11 +27,6 @@
 		ch = WAVEFORM_HEIGHT;
 		canvas.width = cw;
 		canvas.height = ch;
-
-		// cache CSS colors for draw()
-		const style = getComputedStyle(canvas);
-		colorDim = style.getPropertyValue('--waveform-dim').trim() || '#555';
-		colorPlay = style.getPropertyValue('--waveform-play').trim() || '#2ed573';
 
 		url = URL.createObjectURL(audio);
 		player = new Audio(url);
@@ -58,6 +49,13 @@
 			})
 			.catch(() => {});
 
+		// touch events registered with { passive: false } so preventDefault works.
+		// Chromium makes inline touch handlers passive by default, silently ignoring
+		// preventDefault. addEventListener with explicit passive:false is the fix.
+		canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+		canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+		canvas.addEventListener('touchend', onTouchEnd);
+
 		return () => {
 			if (player) {
 				player.pause();
@@ -68,6 +66,9 @@
 				url = null;
 			}
 			cancelLoop();
+			canvas.removeEventListener('touchstart', onTouchStart);
+			canvas.removeEventListener('touchmove', onTouchMove);
+			canvas.removeEventListener('touchend', onTouchEnd);
 		};
 	});
 
@@ -101,11 +102,17 @@
 		return out;
 	}
 
-	// draw waveform with playback progress (0..1)
+	// draw waveform with playback progress (0..1).
+	// reads CSS colors fresh on every call (live dark/light theme support).
 	function draw(progress: number) {
 		if (!canvas || peaks.length === 0) return;
 		const ctx = canvas.getContext('2d');
 		if (!ctx) return;
+
+		const style = getComputedStyle(canvas);
+		const colorDim = style.getPropertyValue('--waveform-dim').trim() || '#555';
+		const colorPlay = style.getPropertyValue('--waveform-play').trim() || '#2ed573';
+
 		const mid = ch / 2;
 		const barW = cw / peaks.length;
 
@@ -159,7 +166,10 @@
 	function onMouseDown(e: MouseEvent) {
 		dragging = true;
 		seekTo(e.clientX);
-		if (!playing) playing = true;
+		if (!playing) {
+			player?.play();
+			playing = true;
+		}
 		window.addEventListener('mousemove', onMouseMove);
 		window.addEventListener('mouseup', onMouseUp);
 	}
@@ -174,6 +184,26 @@
 		window.removeEventListener('mousemove', onMouseMove);
 		window.removeEventListener('mouseup', onMouseUp);
 	}
+
+	function onTouchStart(e: TouchEvent) {
+		e.preventDefault();
+		dragging = true;
+		seekTo(e.touches[0].clientX);
+		if (!playing) {
+			player?.play();
+			playing = true;
+		}
+	}
+
+	function onTouchMove(e: TouchEvent) {
+		e.preventDefault();
+		if (!dragging) return;
+		seekTo(e.touches[0].clientX);
+	}
+
+	function onTouchEnd() {
+		dragging = false;
+	}
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -185,5 +215,8 @@
 		height: var(--waveform-h, 64px);
 		cursor: pointer;
 		border-radius: 2px;
+		touch-action: none;
+		user-select: none;
+		-webkit-user-select: none;
 	}
 </style>
