@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick as svelteTick } from 'svelte';
 	import { untrack } from 'svelte';
 	import { WAVEFORM_HEIGHT } from '../lib/config.js';
 	import { app } from '../lib/state.svelte.js';
@@ -71,6 +71,16 @@
 	function preventTouch(e: TouchEvent) {
 		e.preventDefault();
 	}
+
+	// redraw idle waveforms when the theme changes
+	$effect(() => {
+		app.dark; // track toggle
+		svelteTick().then(() => {
+			if (peaks.length > 0 && player) {
+				draw(dur > 0 ? player.currentTime / dur : 0);
+			}
+		});
+	});
 
 	// play/pause toggle (driven by SongCard button via bind:playing)
 	$effect(() => {
