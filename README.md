@@ -120,7 +120,7 @@ With a LoRA adapter (PEFT directory or ComfyUI single file):
     --lora best_sft_v2_2338_comfyui.safetensors
 ```
 
-Generate multiple songs at once with `batch_size` in the JSON:
+Generate multiple songs at once with `lm_batch_size` in the JSON:
 
 ```bash
 # 2 different songs from one prompt (different lyrics, codes, metadata)
@@ -128,16 +128,16 @@ cat > /tmp/request.json << 'EOF'
 {
     "caption": "Upbeat pop rock anthem with driving guitars and catchy hooks",
     "vocal_language": "fr",
-    "batch_size": 2
+    "lm_batch_size": 2
 }
 EOF
 
-# LM: request.json (batch_size=2) -> request0.json, request1.json
+# LM: request.json (lm_batch_size=2) -> request0.json, request1.json
 ./build/ace-lm \
     --request /tmp/request.json \
     --lm models/acestep-5Hz-lm-4B-Q8_0.gguf
 
-# DiT+VAE: both requests in one GPU batch -> simple-batch00.mp3, simple-batch11.mp3
+# DiT+VAE: both requests in one GPU batch -> request00.mp3, request10.mp3
 ./build/ace-synth \
     --request /tmp/request0.json /tmp/request1.json \
     --embedding models/Qwen3-Embedding-0.6B-Q8_0.gguf \
@@ -145,9 +145,9 @@ EOF
     --vae models/vae-BF16.gguf
 ```
 
-`batch_size` controls how many songs the LM generates. User-provided
+`lm_batch_size` controls how many songs the LM generates. User-provided
 fields are preserved in all outputs. Empty fields are filled independently
-per batch item from different seeds, producing genuinely different songs.
+per batch item, producing genuinely different songs.
 ace-synth takes all request files as CLI arguments and runs them in a
 single GPU batch.
 
@@ -175,7 +175,7 @@ Ready-made examples in `examples/`:
 ```bash
 cd examples
 ./simple.sh                    # caption only, LLM fills everything
-./simple-batch.sh              # 2 songs from one prompt (batch_size=2)
+./simple-batch.sh              # 2 songs from one prompt (lm_batch_size=2)
 ./partial.sh                   # caption + lyrics + duration
 ./full.sh                      # all metadata provided
 ./dit-only.sh                  # skip LLM, DiT from noise
@@ -200,7 +200,7 @@ prompt to generate an enriched caption, lyrics, and metadata (bpm, keyscale,
 timesignature, duration, vocal_language) via CoT. Phase 2 reinjects the CoT
 and generates audio codes using the "Generate tokens" prompt. CFG is forced
 to 1.0 in phase 1 (free sampling); `lm_cfg_scale` only applies in phase 2.
-With `batch_size > 1`, each element runs its own phase 1 from a different seed,
+With `lm_batch_size > 1`, each element runs its own phase 1,
 producing N completely different songs. See `examples/simple-batch.json`.
 
 **Caption + lyrics (+ optional metadata)**: single LLM pass. The "Generate
@@ -211,7 +211,7 @@ generation. See `examples/partial.json`.
 
 **Everything provided** (caption, lyrics, bpm, duration, keyscale,
 timesignature): the LLM skips CoT and generates audio codes directly.
-With `batch_size > 1`, all elements share the same prompt (single prefill,
+With `lm_batch_size > 1`, all elements share the same prompt (single prefill,
 KV cache copied), producing N different audio code sets. See `examples/full.json`.
 
 **Instrumental** (`lyrics="[Instrumental]"`): treated as "lyrics provided",
@@ -304,7 +304,8 @@ the LLM fills them, or a sensible runtime default is applied.
     "timesignature":        "",
     "vocal_language":       "",
     "seed":                 -1,
-    "batch_size":           1,
+    "lm_batch_size":        1,
+    "synth_batch_size":     1,
     "lm_temperature":       0.85,
     "lm_cfg_scale":         2.0,
     "lm_top_p":             0.9,
@@ -362,14 +363,27 @@ BCP-47 language code for lyrics, e.g. `"en"`, `"fr"`, `"ja"`. Three states:
 
 ### Generation control
 
-**`batch_size`** (int, default `1`)
-Number of songs to generate. ace-lm produces N enriched requests, each with
-its own lyrics, audio codes, metadata, and seed (seed+0 ... seed+N-1).
-ace-synth takes N request files and runs them in a single GPU batch.
-
 **`seed`** (int64, default `-1` = random)
-RNG seed. Resolved once at startup to a random value if -1. Batch elements
-use `seed+0`, `seed+1`, ... `seed+N-1`.
+RNG seed for the DiT pipeline (Philox noise). The LM always uses a
+random seed internally.
+
+**`lm_batch_size`** (int, default `1`)
+Number of LM variations. Has no effect on ace-synth.
+
+**`synth_batch_size`** (int, default `1`)
+Number of DiT variations per request. Works in all modes: text2music,
+cover, repaint, lego. Combined with `lm_batch_size`, you get
+`lm_batch_size * synth_batch_size` total outputs.
+
+### Batching
+
+Three rules govern all batching, in both CLIs and the server:
+
+1. Each input JSON is executed independently, as if it were the only one.
+2. `seed=-1` is resolved to a random value once per input JSON.
+   An explicit seed is used as-is.
+3. `lm_batch_size=N` duplicates with consecutive LM-internal seeds.
+   `synth_batch_size=N` duplicates with consecutive `seed` values.
 
 **`audio_codes`** (string, default `""`)
 Comma-separated FSQ token IDs produced by ace-lm. When non-empty, the
@@ -470,10 +484,8 @@ Debug:
 
 Three LLM sizes: 0.6B (fast), 1.7B, 4B (best quality).
 
-Batching is controlled by `batch_size` in the request JSON (default 1).
-Model weights are read once per decode step for all N sequences. Phase 1
-(CoT) and Phase 2 (audio codes) are both batched with independent seeds
-(seed+0 .. seed+N-1).
+Batching is controlled by `lm_batch_size` in the request JSON (default 1).
+Model weights are read once per decode step for all N sequences.
 
 ## ace-synth reference
 
@@ -495,7 +507,7 @@ LoRA:
 
 Output:
   Default: MP3 at 128 kbps. input.json -> input0.mp3
-  Multiple requests are batched in one GPU pass.
+  Multiple requests and synth_batch_size are batched in one GPU pass.
   --mp3-bitrate <kbps>    MP3 bitrate (default: 128)
   --wav                   Output WAV instead of MP3
 
@@ -524,6 +536,11 @@ When `--src-audio` is provided, the source audio (WAV or MP3, any sample rate)
 is resampled to 48kHz, VAE-encoded once and injected as DiT context for every
 request. `audio_cover_strength` in the JSON controls how many steps use the
 source (default 0.5).
+
+Batching comes from two sources: multiple `--request` files on the CLI
+(or JSON array on the server), and `synth_batch_size` inside each request.
+Both are combined: 2 request files with `synth_batch_size=3` yields 6 tracks
+in one GPU pass.
 
 ## ace-server reference
 
@@ -568,7 +585,7 @@ Output:
 Server:
   --host <addr>           Listen address (default: 127.0.0.1)
   --port <N>              Listen port (default: 8080)
-  --max-batch <N>         LM/synth batch limit (default: 1)
+  --max-batch <N>         LM batch limit (default: 1)
   --sleep <N>             Unload models after N sec. (default: 0 = off)
 
 Debug:
@@ -595,14 +612,17 @@ ace-server --lm lm.gguf
 
 **POST /lm** accepts an AceRequest JSON body, runs the LM pipeline, and
 returns a JSON array of enriched requests (`Content-Type: application/json`).
-`batch_size` in the input controls the array length (clamped to `1..max_batch`).
+`lm_batch_size` in the input controls the array length (clamped to `1..max_batch`).
 Requires `--lm`.
 
 **POST /synth** runs the synth pipeline and returns audio (MP3 or WAV via `?wav=1`).
 Three input modes: a JSON array `[{req0}, {req1}]` for batch generation,
 a single `application/json` object for one track, or `multipart/form-data`
 with a `request` part (JSON) and an `audio` part (WAV or MP3) for
-cover/repaint/lego. Array length is clamped to `1..max_batch`.
+cover/repaint/lego. `synth_batch_size` in each request duplicates it for
+multiple DiT variations (e.g. multipart with `synth_batch_size=3` produces
+3 tracks from the same audio). Total track count (after expansion) is
+clamped to 9.
 Response format depends on batch size:
 batch=1: raw audio body.
 batch>1: `Content-Type: multipart/mixed`, each part is raw audio.
@@ -765,7 +785,7 @@ Required:
 Output:
   -o <json>               Output JSON (default: stdout summary)
 
-Sampling params (seed, lm_temperature, lm_top_p, lm_top_k) come from the
+Sampling params (lm_temperature, lm_top_p, lm_top_k) come from the
 request JSON. Without --request, understand defaults apply
 (temperature=0.3, top_p disabled).
 

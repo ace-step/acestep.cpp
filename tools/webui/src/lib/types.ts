@@ -10,7 +10,8 @@ export interface AceRequest {
 	timesignature?: string;
 	vocal_language?: string;
 	seed?: number;
-	batch_size?: number;
+	lm_batch_size?: number;
+	synth_batch_size?: number;
 	lm_temperature?: number;
 	lm_cfg_scale?: number;
 	lm_top_p?: number;

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # client-batch.py: test batching via ace-server
 #
-# POST /lm (batch_size=2 in JSON) -> 2 enriched requests
+# POST /lm (lm_batch_size=2 in JSON) -> 2 enriched requests
 # POST /synth (JSON array of 2 requests) -> 2 MP3s in one GPU batch
 #
 # Start the server first: ./server.sh
@@ -66,8 +66,8 @@ except FileNotFoundError:
     sys.exit(1)
 
 try:
-    batch_size = request_json.get("batch_size", 1)
-    print("POST /lm (batch_size=%d)..." % batch_size)
+    lm_batch_size = request_json.get("lm_batch_size", 1)
+    print("POST /lm (lm_batch_size=%d)..." % lm_batch_size)
     lm_data, _ = post_json("/lm", request_json)
 except urllib.error.URLError as e:
     print("ERROR: cannot connect to %s (%s)" % (URL, e.reason))

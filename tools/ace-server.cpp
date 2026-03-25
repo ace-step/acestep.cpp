@@ -114,7 +114,7 @@ static void json_error(httplib::Response & res, int status, const char * msg) {
 static void json_busy(httplib::Response & res) {
     res.status = 503;
     res.set_header("Retry-After", "5");
-    res.set_content("{\"error\":\"server busy\"}", "application/json");
+    res.set_content("{\"error\":\"Server busy\"}", "application/json");
 }
 
 // sleep/wake helpers. always called under the appropriate mutex.
@@ -198,7 +198,7 @@ static void watchdog_thread(void) {
 
 // POST /lm
 // accepts: AceRequest JSON
-// returns: JSON array of enriched AceRequests (batch_size controls count)
+// returns: JSON array of enriched AceRequests (lm_batch_size controls count)
 static void handle_lm(const httplib::Request & req, httplib::Response & res) {
     if (!g_have_lm) {
         json_error(res, 501, "LM pipeline not loaded (requires --lm)");
@@ -208,17 +208,21 @@ static void handle_lm(const httplib::Request & req, httplib::Response & res) {
     // parse the incoming JSON body
     AceRequest ace_req;
     if (!request_parse_json(&ace_req, req.body.c_str())) {
-        json_error(res, 400, "invalid JSON");
+        json_error(res, 400, "Invalid JSON");
+        return;
+    }
+    if (ace_req.caption.empty()) {
+        json_error(res, 400, "Caption is required");
         return;
     }
 
-    // clamp batch_size to [1, max_batch]
-    int batch_size = ace_req.batch_size;
-    if (batch_size < 1) {
-        batch_size = 1;
+    // clamp lm_batch_size to [1, max_batch]
+    int lm_batch_size = ace_req.lm_batch_size;
+    if (lm_batch_size < 1) {
+        lm_batch_size = 1;
     }
-    if (batch_size > g_max_batch) {
-        batch_size = g_max_batch;
+    if (lm_batch_size > g_max_batch) {
+        lm_batch_size = g_max_batch;
     }
 
     // try to acquire GPU. 503 instantly if busy.
@@ -231,10 +235,10 @@ static void handle_lm(const httplib::Request & req, httplib::Response & res) {
         wake_lm();
     }
 
-    std::vector<AceRequest> out(batch_size);
-    int                     rc = ace_lm_generate(g_ctx_lm, &ace_req, batch_size, out.data(), NULL, NULL, server_cancel,
-                                                 (void *) &req.is_connection_closed);
-    g_lm_last_use              = std::chrono::steady_clock::now();
+    std::vector<AceRequest> out(lm_batch_size);
+    int rc        = ace_lm_generate(g_ctx_lm, &ace_req, lm_batch_size, out.data(), NULL, NULL, server_cancel,
+                                    (void *) &req.is_connection_closed);
+    g_lm_last_use = std::chrono::steady_clock::now();
     lock.unlock();
 
     if (rc != 0) {
@@ -244,7 +248,7 @@ static void handle_lm(const httplib::Request & req, httplib::Response & res) {
 
     // serialize output as a JSON array
     std::string body = "[";
-    for (int i = 0; i < batch_size; i++) {
+    for (int i = 0; i < lm_batch_size; i++) {
         if (i > 0) {
             body += ",";
         }
@@ -264,11 +268,11 @@ static void handle_lm(const httplib::Request & req, httplib::Response & res) {
 // output: audio/mpeg (default) or audio/wav (?wav=1)
 //   batch == 1: raw audio body
 //   batch >  1: multipart/mixed, each part is raw audio
-// Batch size = number of JSON objects (clamped to 1..max_batch).
+// Batch size = number of JSON objects (after synth_batch_size expansion, clamped to 9).
 // Metadata (seed, duration, etc) is already in the request JSON from /lm.
 static void handle_synth(const httplib::Request & req, httplib::Response & res) {
     if (!g_have_synth) {
-        json_error(res, 501, "synth pipeline not loaded (requires --embedding --dit --vae)");
+        json_error(res, 501, "Synth pipeline not loaded (requires --embedding --dit --vae)");
         return;
     }
 
@@ -287,24 +291,24 @@ static void handle_synth(const httplib::Request & req, httplib::Response & res) 
         } else if (req.form.has_field("request")) {
             json_body = req.form.get_field("request");
         } else {
-            json_error(res, 400, "multipart: missing 'request' part");
+            json_error(res, 400, "Multipart: missing 'request' part");
             return;
         }
         if (!request_parse_json(&ace_req, json_body.c_str())) {
-            json_error(res, 400, "multipart: invalid JSON in 'request' part");
+            json_error(res, 400, "Multipart: invalid JSON in 'request' part");
             return;
         }
 
         if (req.form.has_file("audio")) {
             auto file = req.form.get_file("audio");
             if (file.content.empty()) {
-                json_error(res, 400, "multipart: empty 'audio' part");
+                json_error(res, 400, "Multipart: empty 'audio' part");
                 return;
             }
             int     T_audio = 0;
             float * planar  = audio_read_48k_buf((const uint8_t *) file.content.data(), file.content.size(), &T_audio);
             if (!planar || T_audio <= 0) {
-                json_error(res, 400, "failed to decode audio");
+                json_error(res, 400, "Failed to decode audio");
                 return;
             }
             fprintf(stderr, "[Server] Source audio: %.2fs @ 48kHz\n", (float) T_audio / 48000.0f);
@@ -320,20 +324,48 @@ static void handle_synth(const httplib::Request & req, httplib::Response & res) 
     } else {
         // plain JSON body: single object {} or array [{}, ...]
         if (!request_parse_json_array(req.body.c_str(), &ace_reqs)) {
-            json_error(res, 400, "invalid JSON");
+            json_error(res, 400, "Invalid JSON");
             return;
         }
     }
 
     if (ace_reqs.empty()) {
-        json_error(res, 400, "empty request");
+        json_error(res, 400, "Empty request");
+        return;
+    }
+    if (ace_reqs[0].caption.empty() && ace_reqs[0].lego.empty()) {
+        json_error(res, 400, "Caption is required");
         return;
     }
 
-    // clamp batch to max_batch
+    // expand synth_batch_size: duplicate each request for N DiT variations.
+    // resolve seeds here so the pipeline receives definitive values.
+    {
+        std::vector<AceRequest> expanded;
+        for (auto & r : ace_reqs) {
+            int sbs = r.synth_batch_size;
+            if (sbs < 1) {
+                sbs = 1;
+            }
+            // resolve seed once per original request
+            long long base_seed = r.seed;
+            if (base_seed < 0) {
+                std::random_device rd;
+                base_seed = (long long) rd();
+            }
+            for (int i = 0; i < sbs; i++) {
+                AceRequest copy = r;
+                copy.seed       = base_seed + i;
+                expanded.push_back(copy);
+            }
+        }
+        ace_reqs = std::move(expanded);
+    }
+
+    // clamp to pipeline hard limit (max_batch is LM-only, synth is cheap)
     int batch_n = (int) ace_reqs.size();
-    if (batch_n > g_max_batch) {
-        batch_n = g_max_batch;
+    if (batch_n > 9) {
+        batch_n = 9;
         ace_reqs.resize(batch_n);
     }
 
@@ -362,7 +394,7 @@ static void handle_synth(const httplib::Request & req, httplib::Response & res) 
         for (int b = 0; b < batch_n; b++) {
             ace_audio_free(&audio[b]);
         }
-        json_error(res, 500, "synth generation failed");
+        json_error(res, 500, "Synth generation failed");
         return;
     }
 
@@ -405,7 +437,7 @@ static void handle_synth(const httplib::Request & req, httplib::Response & res) 
     // single track: raw audio body
     if (batch_n == 1) {
         if (encoded[0].empty()) {
-            json_error(res, 500, "audio encoding failed");
+            json_error(res, 500, "Audio encoding failed");
             return;
         }
         res.set_content(encoded[0], mime);
@@ -438,7 +470,7 @@ static void handle_synth(const httplib::Request & req, httplib::Response & res) 
 // returns: application/json AceRequest with metadata + lyrics + codes
 static void handle_understand(const httplib::Request & req, httplib::Response & res) {
     if (!g_have_lm) {
-        json_error(res, 501, "understand pipeline not loaded (requires --lm)");
+        json_error(res, 501, "Understand pipeline not loaded (requires --lm)");
         return;
     }
 
@@ -455,23 +487,23 @@ static void handle_understand(const httplib::Request & req, httplib::Response & 
         // multipart: required "audio" part, optional "request" part for sampling params
         if (req.form.has_file("request")) {
             if (!request_parse_json(&ace_req, req.form.get_file("request").content.c_str())) {
-                json_error(res, 400, "multipart: invalid JSON in 'request' part");
+                json_error(res, 400, "Multipart: invalid JSON in 'request' part");
                 return;
             }
         } else if (req.form.has_field("request")) {
             if (!request_parse_json(&ace_req, req.form.get_field("request").c_str())) {
-                json_error(res, 400, "multipart: invalid JSON in 'request' part");
+                json_error(res, 400, "Multipart: invalid JSON in 'request' part");
                 return;
             }
         }
 
         if (!req.form.has_file("audio")) {
-            json_error(res, 400, "multipart: missing 'audio' part");
+            json_error(res, 400, "Multipart: missing 'audio' part");
             return;
         }
         auto file = req.form.get_file("audio");
         if (file.content.empty()) {
-            json_error(res, 400, "multipart: empty 'audio' part");
+            json_error(res, 400, "Multipart: empty 'audio' part");
             return;
         }
 
@@ -479,7 +511,7 @@ static void handle_understand(const httplib::Request & req, httplib::Response & 
         int     T_audio = 0;
         float * planar  = audio_read_48k_buf((const uint8_t *) file.content.data(), file.content.size(), &T_audio);
         if (!planar || T_audio <= 0) {
-            json_error(res, 400, "failed to decode audio");
+            json_error(res, 400, "Failed to decode audio");
             return;
         }
 
@@ -496,7 +528,7 @@ static void handle_understand(const httplib::Request & req, httplib::Response & 
     } else {
         // plain JSON body: codes-only mode
         if (!request_parse_json(&ace_req, req.body.c_str())) {
-            json_error(res, 400, "invalid JSON");
+            json_error(res, 400, "Invalid JSON");
             return;
         }
     }
@@ -521,7 +553,7 @@ static void handle_understand(const httplib::Request & req, httplib::Response & 
     free(src_interleaved);
 
     if (rc != 0) {
-        json_error(res, 500, "understand generation failed");
+        json_error(res, 500, "Understand generation failed");
         return;
     }
 
@@ -616,7 +648,7 @@ static void usage(const char * prog) {
             "Server:\n"
             "  --host <addr>           Listen address (default: 127.0.0.1)\n"
             "  --port <N>              Listen port (default: 8080)\n"
-            "  --max-batch <N>         LM/synth batch limit (default: 1)\n"
+            "  --max-batch <N>         LM batch limit (default: 1)\n"
             "  --sleep <N>             Unload models after N sec. (default: 0 = off)\n"
             "\n"
             "Debug:\n"

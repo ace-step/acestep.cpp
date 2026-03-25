@@ -220,15 +220,9 @@ int ace_understand_generate(AceUnderstand *    ctx,
 
     Timer t_total;
 
-    // Resolve seed (same as ace-lm)
-    long long seed = req->seed;
-    if (seed < 0) {
-        std::random_device rd;
-        seed = (int64_t) rd() << 32 | rd();
-        if (seed < 0) {
-            seed = -seed;
-        }
-    }
+    // LM RNG seed: always random (mt19937 uses 32 bits)
+    std::random_device rd;
+    uint32_t           seed = rd();
 
     // Generation params from request
     float temperature = req->lm_temperature;
@@ -333,7 +327,7 @@ int ace_understand_generate(AceUnderstand *    ctx,
     std::vector<float> logits(V);
     qw3lm_reset_kv(ctx->model, 0);
     qw3lm_forward(ctx->model, prompt.data(), (int) prompt.size(), 0, logits.data());
-    fprintf(stderr, "[Prefill] %.0fms, %zu tokens, seed=%lld\n", t_gen.ms(), prompt.size(), seed);
+    fprintf(stderr, "[Prefill] %.0fms, %zu tokens, seed=%u\n", t_gen.ms(), prompt.size(), seed);
 
     // Step 5: autoregressive decode
     // No CFG, no batch. Single sequence, stop at <|im_end|>.
@@ -422,7 +416,7 @@ int ace_understand_generate(AceUnderstand *    ctx,
     out->keyscale       = parsed.keyscale;
     out->timesignature  = parsed.timesignature;
     out->vocal_language = parsed.vocal_language;
-    out->seed           = seed;
+    out->seed           = req->seed;
 
     // Build audio_codes string from recovered codes (comma-separated)
     std::string codes_str;
@@ -446,7 +440,7 @@ int ace_understand_generate(AceUnderstand *    ctx,
         out->guidance_scale  = 1.0f;
     }
 
-    fprintf(stderr, "[Understand] Load %.0f | Total %.0fms | seed=%lld\n", ctx->load_ms, t_total.ms(), seed);
+    fprintf(stderr, "[Understand] Load %.0f | Total %.0fms | seed=%u\n", ctx->load_ms, t_total.ms(), seed);
     return 0;
 }
 

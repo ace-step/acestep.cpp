@@ -609,17 +609,17 @@ AceLm * ace_lm_load(const AceLmParams * params) {
 
 int ace_lm_generate(AceLm *            ctx,
                     const AceRequest * req,
-                    int                batch_size,
+                    int                lm_batch_size,
                     AceRequest *       out,
                     const char *       dump_logits,
                     const char *       dump_tokens,
                     bool (*cancel)(void *),
                     void * cancel_data) {
-    if (!ctx || !req || !out || batch_size < 1) {
+    if (!ctx || !req || !out || lm_batch_size < 1) {
         return -1;
     }
-    if (batch_size > ctx->params.max_batch) {
-        fprintf(stderr, "[Ace-LM] ERROR: batch_size %d > max_batch %d\n", batch_size, ctx->params.max_batch);
+    if (lm_batch_size > ctx->params.max_batch) {
+        fprintf(stderr, "[Ace-LM] ERROR: lm_batch_size %d > max_batch %d\n", lm_batch_size, ctx->params.max_batch);
         return -1;
     }
     if (req->caption.empty()) {
@@ -629,14 +629,14 @@ int ace_lm_generate(AceLm *            ctx,
 
     Timer t_total;
 
-    // Resolve seed
-    long long seed = req->seed;
-    if (seed < 0) {
-        std::random_device rd;
-        seed = (int64_t) rd() << 32 | rd();
-        if (seed < 0) {
-            seed = -seed;  // keep positive
-        }
+    // LM RNG seed: always random (mt19937 uses 32 bits)
+    std::random_device rd;
+    uint32_t           seed = rd();
+
+    // Resolve DiT seed (pass through to output for synth pipeline)
+    long long dit_seed = req->seed;
+    if (dit_seed < 0) {
+        dit_seed = (int64_t) rd();
     }
 
     // Generation params from request
@@ -710,10 +710,10 @@ int ace_lm_generate(AceLm *            ctx,
         }
 
         fprintf(stderr, "[Fill] lyrics=%s metas=%s | %zu tokens, CFG: %.2f, N=%d\n", need_lyrics ? "generate" : "keep",
-                has_all_metas ? "complete" : "fill gaps", prompt.size(), fill_cfg, batch_size);
+                has_all_metas ? "complete" : "fill gaps", prompt.size(), fill_cfg, lm_batch_size);
 
         auto phase1_texts = generate_phase1_batch(
-            &ctx->model, &ctx->bpe, prompt, 2048, temperature, fill_top_p, fill_top_k, seed, batch_size, active_fsm,
+            &ctx->model, &ctx->bpe, prompt, 2048, temperature, fill_top_p, fill_top_k, seed, lm_batch_size, active_fsm,
             need_lyrics, fill_cfg, uncond.empty() ? nullptr : &uncond, !need_lyrics, cancel, cancel_data);
         if (phase1_texts.empty()) {
             return -1;
@@ -721,7 +721,7 @@ int ace_lm_generate(AceLm *            ctx,
 
         parse_phase1_into_aces(phase1_texts, ace, aces, seed, "Fill", need_lyrics, req->use_cot_caption);
 
-        int n_kv_reset = (fill_cfg > 1.0f) ? 2 * batch_size : batch_size;
+        int n_kv_reset = (fill_cfg > 1.0f) ? 2 * lm_batch_size : lm_batch_size;
         for (int i = 0; i < n_kv_reset; i++) {
             qw3lm_reset_kv(&ctx->model, i);
         }
@@ -762,9 +762,9 @@ int ace_lm_generate(AceLm *            ctx,
     }
 
     // Phase 2: generate audio codes
-    std::vector<std::string> batch_codes(batch_size);
+    std::vector<std::string> batch_codes(lm_batch_size);
     if (!user_has_codes) {
-        batch_codes = run_phase2_batch(&ctx->model, ctx->bpe, aces, temperature, top_p, top_k, seed, batch_size,
+        batch_codes = run_phase2_batch(&ctx->model, ctx->bpe, aces, temperature, top_p, top_k, seed, lm_batch_size,
                                        cfg_scale, neg_prompt, ctx->params.use_batch_cfg, cancel, cancel_data);
         if (batch_codes.empty()) {
             return -1;
@@ -774,7 +774,7 @@ int ace_lm_generate(AceLm *            ctx,
     }
 
     // Write N output requests
-    for (int b = 0; b < batch_size; b++) {
+    for (int b = 0; b < lm_batch_size; b++) {
         out[b]                = *req;
         const AcePrompt & a   = aces[b < (int) aces.size() ? b : 0];
         out[b].caption        = a.caption;
@@ -787,11 +787,11 @@ int ace_lm_generate(AceLm *            ctx,
         if (!batch_codes[b].empty()) {
             out[b].audio_codes = batch_codes[b];
         }
-        out[b].seed       = seed + b;
-        out[b].batch_size = 1;  // each output is a standalone enriched request
+        out[b].seed          = dit_seed + b;
+        out[b].lm_batch_size = 1;  // each output is a standalone enriched request
     }
 
-    fprintf(stderr, "[Ace-LM] Load %.0f | Total %.0fms | seed=%lld\n", ctx->load_ms, t_total.ms(), seed);
+    fprintf(stderr, "[Ace-LM] Load %.0f | Total %.0fms | seed=%lld\n", ctx->load_ms, t_total.ms(), dit_seed);
     return 0;
 }
 

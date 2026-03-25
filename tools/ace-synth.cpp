@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -193,6 +194,40 @@ int main(int argc, char ** argv) {
     }
     fprintf(stderr, "[Pipeline] Batch: %d request(s)\n", batch_n);
 
+    // expand synth_batch_size: duplicate each request for N DiT variations.
+    // resolve seeds and assign consecutive seeds per copy.
+    // track local index per original request for output naming.
+    std::vector<int> synth_indices;
+    {
+        std::vector<AceRequest>  exp_reqs;
+        std::vector<std::string> exp_names;
+        for (int ri = 0; ri < batch_n; ri++) {
+            int sbs = reqs[ri].synth_batch_size;
+            if (sbs < 1) {
+                sbs = 1;
+            }
+            // resolve seed once per original request
+            long long base_seed = reqs[ri].seed;
+            if (base_seed < 0) {
+                std::random_device rd;
+                base_seed = (long long) rd();
+            }
+            for (int i = 0; i < sbs; i++) {
+                AceRequest copy = reqs[ri];
+                copy.seed       = base_seed + i;
+                exp_reqs.push_back(copy);
+                exp_names.push_back(basenames[ri]);
+                synth_indices.push_back(i);
+            }
+        }
+        reqs      = std::move(exp_reqs);
+        basenames = std::move(exp_names);
+        batch_n   = (int) reqs.size();
+        if (batch_n > 1) {
+            fprintf(stderr, "[Pipeline] Expanded to %d (synth_batch_size)\n", batch_n);
+        }
+    }
+
     // Generate all in one GPU batch
     std::vector<AceAudio> audio(batch_n);
     if (ace_synth_generate(ctx, reqs.data(), src_interleaved, src_len, batch_n, audio.data()) != 0) {
@@ -209,7 +244,7 @@ int main(int argc, char ** argv) {
         }
         const char * ext = output_wav ? ".wav" : ".mp3";
         char         out_path[1024];
-        snprintf(out_path, sizeof(out_path), "%s%d%s", basenames[b].c_str(), b, ext);
+        snprintf(out_path, sizeof(out_path), "%s%d%s", basenames[b].c_str(), synth_indices[b], ext);
         if (!audio_write(out_path, audio[b].samples, audio[b].n_samples, 48000, mp3_kbps)) {
             fprintf(stderr, "[Batch%d] FATAL: failed to write %s\n", b, out_path);
         }

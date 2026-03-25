@@ -282,7 +282,8 @@ int ace_synth_generate(AceSynth *         ctx,
     }
 
     // Shared params from first request (caption, lyrics, metadata, DiT settings).
-    // Per-batch: audio_codes come from reqs[b], seed is always reqs[0].seed + b.
+    // Per-batch: audio_codes and seed come from reqs[b].
+    // seed must be resolved (non-negative) before calling this function.
     AceRequest rr = reqs[0];
 
     if (rr.caption.empty() && rr.lego.empty()) {
@@ -334,7 +335,6 @@ int ace_synth_generate(AceSynth *         ctx,
     const char * timesig  = rr.timesignature.empty() ? "N/A" : rr.timesignature.c_str();
     const char * language = rr.vocal_language.empty() ? "unknown" : rr.vocal_language.c_str();
     float        duration = rr.duration > 0 ? rr.duration : 30.0f;
-    long long    seed     = rr.seed;
 
     // Resolve DiT sampling params: 0 = auto-detect from model type.
     // Turbo: 8 steps, guidance=1.0, shift=3.0
@@ -360,14 +360,6 @@ int ace_synth_generate(AceSynth *         ctx,
 
     if (shift <= 0.0f) {
         shift = ctx->is_turbo ? 3.0f : 1.0f;
-    }
-
-    if (seed < 0) {
-        std::random_device rd;
-        seed = (long long) rd() << 32 | rd();
-        if (seed < 0) {
-            seed = -seed;
-        }
     }
 
     // Audio codes: scan all requests to determine T from the longest code set.
@@ -417,8 +409,8 @@ int ace_synth_generate(AceSynth *         ctx,
     int enc_S = 0;
 
     fprintf(stderr, "[Pipeline] T=%d, S=%d\n", T, S);
-    fprintf(stderr, "[Pipeline] seed=%lld, steps=%d, guidance=%.1f, shift=%.1f, duration=%.1fs\n", seed, num_steps,
-            guidance_scale, shift, duration);
+    fprintf(stderr, "[Pipeline] seed=%lld, steps=%d, guidance=%.1f, shift=%.1f, duration=%.1fs\n", (long long) rr.seed,
+            num_steps, guidance_scale, shift, duration);
 
     if (T > 15000) {
         fprintf(stderr, "[Pipeline] ERROR: T=%d exceeds silence_latent max 15000, skipping\n", T);
@@ -651,12 +643,12 @@ int ace_synth_generate(AceSynth *         ctx,
     }
 
     // Generate N noise samples (Philox4x32-10, matches torch.randn on CUDA with bf16).
-    // Each batch item gets seed+b (same convention as Python and ace-lm output).
+    // Each batch item uses its own seed from the request.
     std::vector<float> noise(batch_n * Oc * T);
     for (int b = 0; b < batch_n; b++) {
         float * dst = noise.data() + b * Oc * T;
-        philox_randn(seed + b, dst, Oc * T, /*bf16_round=*/true);
-        fprintf(stderr, "[Context Batch%d] Philox noise seed=%lld, [%d, %d]\n", b, seed + b, T, Oc);
+        philox_randn(reqs[b].seed, dst, Oc * T, /*bf16_round=*/true);
+        fprintf(stderr, "[Context Batch%d] Philox noise seed=%lld, [%d, %d]\n", b, (long long) reqs[b].seed, T, Oc);
     }
 
     // DiT Generate

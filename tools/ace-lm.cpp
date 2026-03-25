@@ -89,25 +89,25 @@ int main(int argc, char ** argv) {
     }
     request_dump(&req, stderr);
 
-    // batch_size from JSON (clamped to 1..9)
-    int batch_size = req.batch_size;
-    if (batch_size < 1) {
-        batch_size = 1;
-    } else if (batch_size > 9) {
-        fprintf(stderr, "[Request] WARNING: batch_size %d clamped to 9\n", batch_size);
-        batch_size = 9;
+    // lm_batch_size from JSON (clamped to 1..9)
+    int lm_batch_size = req.lm_batch_size;
+    if (lm_batch_size < 1) {
+        lm_batch_size = 1;
+    } else if (lm_batch_size > 9) {
+        fprintf(stderr, "[Request] WARNING: lm_batch_size %d clamped to 9\n", lm_batch_size);
+        lm_batch_size = 9;
     }
 
     // Load model (KV cache sized for request batch)
-    params.max_batch = batch_size;
+    params.max_batch = lm_batch_size;
     AceLm * ctx      = ace_lm_load(&params);
     if (!ctx) {
         return 1;
     }
 
     // Generate
-    std::vector<AceRequest> out(batch_size);
-    if (ace_lm_generate(ctx, &req, batch_size, out.data(), dump_logits, dump_tokens) != 0) {
+    std::vector<AceRequest> out(lm_batch_size);
+    if (ace_lm_generate(ctx, &req, lm_batch_size, out.data(), dump_logits, dump_tokens) != 0) {
         ace_lm_free(ctx);
         return 1;
     }
@@ -120,7 +120,7 @@ int main(int argc, char ** argv) {
         ext  = base.substr(dot);
         base = base.substr(0, dot);
     }
-    for (int b = 0; b < batch_size; b++) {
+    for (int b = 0; b < lm_batch_size; b++) {
         char path[512];
         snprintf(path, sizeof(path), "%s%d%s", base.c_str(), b, ext.c_str());
         request_write(&out[b], path);

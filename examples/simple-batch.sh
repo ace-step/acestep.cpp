@@ -2,7 +2,7 @@
 # Generate 2 songs: LM produces 2 enriched requests (different codes/metas),
 # DiT renders them in a single GPU batch.
 #
-# LM phase (batch_size=2 in simple-batch.json):
+# LM phase (lm_batch_size=2 in simple-batch.json):
 # simple-batch.json -> simple-batch0.json, simple-batch1.json
 #
 # DiT phase (both requests in one batch):

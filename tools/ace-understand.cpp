@@ -36,7 +36,7 @@ static void usage(const char * prog) {
             "Output:\n"
             "  -o <json>               Output JSON (default: stdout summary)\n"
             "\n"
-            "Sampling params (seed, lm_temperature, lm_top_p, lm_top_k) come from the\n"
+            "Sampling params (lm_temperature, lm_top_p, lm_top_k) come from the\n"
             "request JSON. Without --request, understand defaults apply\n"
             "(temperature=0.3, top_p disabled).\n"
             "\n"

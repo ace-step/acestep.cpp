@@ -24,7 +24,8 @@ void request_init(AceRequest * r) {
     r->keyscale             = "";
     r->timesignature        = "";
     r->vocal_language       = "";
-    r->batch_size           = 1;
+    r->lm_batch_size        = 1;
+    r->synth_batch_size     = 1;
     r->seed                 = -1;
     r->lm_temperature       = 0.85f;
     r->lm_cfg_scale         = 2.0f;
@@ -81,8 +82,11 @@ static void request_parse_obj(yyjson_val * obj, AceRequest * r) {
     if ((v = yyjson_obj_get(obj, "bpm")) && yyjson_is_num(v)) {
         r->bpm = (int) yyjson_get_num(v);
     }
-    if ((v = yyjson_obj_get(obj, "batch_size")) && yyjson_is_num(v)) {
-        r->batch_size = (int) yyjson_get_num(v);
+    if ((v = yyjson_obj_get(obj, "lm_batch_size")) && yyjson_is_num(v)) {
+        r->lm_batch_size = (int) yyjson_get_num(v);
+    }
+    if ((v = yyjson_obj_get(obj, "synth_batch_size")) && yyjson_is_num(v)) {
+        r->synth_batch_size = (int) yyjson_get_num(v);
     }
     if ((v = yyjson_obj_get(obj, "seed")) && yyjson_is_num(v)) {
         r->seed = (int64_t) yyjson_get_num(v);
@@ -239,7 +243,8 @@ static yyjson_mut_doc * request_build_doc(const AceRequest * r) {
     yyjson_mut_obj_add_str(doc, root, "timesignature", r->timesignature.c_str());
     yyjson_mut_obj_add_str(doc, root, "vocal_language", r->vocal_language.c_str());
     yyjson_mut_obj_add_sint(doc, root, "seed", r->seed);
-    yyjson_mut_obj_add_int(doc, root, "batch_size", r->batch_size);
+    yyjson_mut_obj_add_int(doc, root, "lm_batch_size", r->lm_batch_size);
+    yyjson_mut_obj_add_int(doc, root, "synth_batch_size", r->synth_batch_size);
     yyjson_mut_obj_add_real(doc, root, "lm_temperature", r->lm_temperature);
     yyjson_mut_obj_add_real(doc, root, "lm_cfg_scale", r->lm_cfg_scale);
     yyjson_mut_obj_add_real(doc, root, "lm_top_p", r->lm_top_p);
@@ -292,7 +297,8 @@ std::string request_to_json(const AceRequest * r) {
 }
 
 void request_dump(const AceRequest * r, FILE * f) {
-    fprintf(f, "[Request] seed=%lld batch=%d\n", (long long) r->seed, r->batch_size);
+    fprintf(f, "[Request] seed=%lld lm_batch=%d synth_batch=%d\n", (long long) r->seed, r->lm_batch_size,
+            r->synth_batch_size);
     fprintf(f, "[Request] caption: %.60s%s\n", r->caption.c_str(), r->caption.size() > 60 ? "..." : "");
     fprintf(f, "[Request] lyrics: %zu bytes\n", r->lyrics.size());
     fprintf(f, "[Request] bpm=%d dur=%.0f key=%s ts=%s lang=%s\n", r->bpm, r->duration, r->keyscale.c_str(),

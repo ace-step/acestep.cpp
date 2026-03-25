@@ -10,6 +10,7 @@
 
 	let d = $derived(app.health?.default);
 	let maxBatch = $derived(Number(app.health?.cli?.max_batch) || 1);
+	let defaultBatch = $derived(Math.min(2, maxBatch));
 
 	function reset() {
 		app.name = '';
@@ -86,8 +87,10 @@
 		if (guidance_scale != null) out.guidance_scale = guidance_scale;
 		const shift = num(r.shift);
 		if (shift != null) out.shift = shift;
-		const batch_size = num(r.batch_size);
-		if (batch_size != null && batch_size > 1) out.batch_size = batch_size;
+		const lm_batch_size = num(r.lm_batch_size);
+		out.lm_batch_size = lm_batch_size != null && lm_batch_size >= 1 ? lm_batch_size : defaultBatch;
+		const synth_batch_size = num(r.synth_batch_size);
+		if (synth_batch_size != null && synth_batch_size >= 1) out.synth_batch_size = synth_batch_size;
 		return out;
 	}
 
@@ -98,10 +101,18 @@
 		}
 	}
 
-	// load pendingRequests[index] into the form (full replace)
+	// load pendingRequests[index] into the form.
+	// synth params are form-global, not per-pending: preserve them across switches.
 	function loadPending(index: number) {
 		const r = app.pendingRequests[index];
-		app.request = { ...r };
+		app.request = {
+			...r,
+			inference_steps: app.request.inference_steps,
+			guidance_scale: app.request.guidance_scale,
+			shift: app.request.shift,
+			seed: app.request.seed,
+			synth_batch_size: app.request.synth_batch_size
+		};
 		app.pendingIndex = index;
 	}
 
@@ -125,7 +136,15 @@
 			if (results.length > 0) {
 				app.pendingRequests = results;
 				app.pendingIndex = 0;
-				app.request = { ...results[0] };
+				// load LM result but preserve synth params from the form
+				app.request = {
+					...results[0],
+					inference_steps: app.request.inference_steps,
+					guidance_scale: app.request.guidance_scale,
+					shift: app.request.shift,
+					seed: app.request.seed,
+					synth_batch_size: app.request.synth_batch_size
+				};
 			}
 		} catch (e: unknown) {
 			toast(e instanceof Error ? e.message : String(e));
@@ -134,21 +153,35 @@
 		}
 	}
 
-	// POST /synth: send pending requests (from Compose) or current form as batch.
-	// Server runs all in a single GPU graph.
+	// POST /synth: send all pending requests (or current form) to the server.
+	// synth_batch_size expansion is done client-side for 1:1 blob-to-song mapping.
+	// synth params (batch, seed, steps, CFG, shift) come from the form, not from pending.
 	async function synthesize() {
 		busy = true;
 		try {
-			// sync current form edits into pending before sending
 			savePending();
-			// unwrap Svelte proxies (IndexedDB structuredClone and JSON.stringify need plain objects)
 			const reqs: AceRequest[] =
 				app.pendingRequests.length > 0 ? $state.snapshot(app.pendingRequests) : [buildRequest()];
-			const blobs = await synthGenerate(reqs, app.format);
+
+			// read synth params from the form (global, not per-pending)
+			const synthBatch = Math.max(1, Number(app.request.synth_batch_size) || 1);
+			const userSeed = Number(app.request.seed);
+			const hasSeed = Number.isFinite(userSeed) && userSeed >= 0;
+
+			// expand: each pending x synthBatch variations with consecutive seed
+			const expanded: AceRequest[] = [];
+			for (const r of reqs) {
+				const base = hasSeed ? userSeed : Math.floor(Math.random() * 0x100000000);
+				for (let i = 0; i < synthBatch; i++) {
+					expanded.push({ ...r, seed: base + i, synth_batch_size: 1 });
+				}
+			}
+
+			const blobs = await synthGenerate(expanded, app.format);
 			const now = Date.now();
 			const baseName = app.name || 'Untitled';
 			for (let i = blobs.length - 1; i >= 0; i--) {
-				const r = reqs[i < reqs.length ? i : 0];
+				const r = expanded[i];
 				const song = {
 					name: baseName,
 					format: app.format,
@@ -242,9 +275,6 @@
 						bind:value={app.request.timesignature}
 					/></label
 				>
-				<label
-					>Seed <input type="text" placeholder={ph(d?.seed)} bind:value={app.request.seed} /></label
-				>
 			</div>
 		</div>
 	</details>
@@ -305,10 +335,11 @@
 				class="batch-input"
 				min="1"
 				max={maxBatch}
-				bind:value={app.request.batch_size}
-				placeholder="1"
+				bind:value={app.request.lm_batch_size}
+				placeholder={String(defaultBatch)}
 			/></label
 		>
+		<span class="selector-label">Pending</span>
 		<div class="pending-nav">
 			<button
 				type="button"
@@ -369,9 +400,25 @@
 						bind:value={app.request.shift}
 					/></label
 				>
+				<label
+					>Seed <input type="text" placeholder={ph(d?.seed)} bind:value={app.request.seed} /></label
+				>
 			</div>
 		</div>
 	</details>
+
+	<div class="selector-row">
+		<label class="selector-label"
+			>Batch <input
+				type="number"
+				class="batch-input"
+				min="1"
+				max="9"
+				bind:value={app.request.synth_batch_size}
+				placeholder="1"
+			/></label
+		>
+	</div>
 
 	<button type="button" disabled={busy} onclick={synthesize}>Synthesize</button>
 </form>

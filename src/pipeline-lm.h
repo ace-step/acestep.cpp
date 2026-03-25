@@ -13,7 +13,7 @@ struct AceLm;
 struct AceLmParams {
     const char * model_path;     // LM GGUF (required)
     int          max_seq;        // KV cache length (default: 8192)
-    int          max_batch;      // max batch_size for generate (default: 4)
+    int          max_batch;      // max lm_batch_size for generate (default: 4)
     bool         use_fsm;        // constrained decoding (default: true)
     bool         use_fa;         // flash attention (default: true)
     bool         use_batch_cfg;  // batch cond+uncond in one forward (default: true)
@@ -26,13 +26,13 @@ void ace_lm_default_params(AceLmParams * p);
 AceLm * ace_lm_load(const AceLmParams * params);
 
 // Enrich request with metadata, lyrics, audio codes.
-// out[batch_size] allocated by caller, filled with enriched copies of req.
+// out[lm_batch_size] allocated by caller, filled with enriched copies of req.
 // dump_logits/dump_tokens: debug output paths (NULL to disable).
 // cancel/cancel_data: abort callback, polled between tokens. NULL = never cancel.
 // Returns 0 on success, -1 on error or cancellation.
 int ace_lm_generate(AceLm *            ctx,
                     const AceRequest * req,
-                    int                batch_size,
+                    int                lm_batch_size,
                     AceRequest *       out,
                     const char *       dump_logits,
                     const char *       dump_tokens,
