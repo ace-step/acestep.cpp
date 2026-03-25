@@ -153,9 +153,10 @@
 		}
 	}
 
-	// POST /synth: send all pending requests (or current form) to the server.
-	// synth_batch_size expansion is done client-side for 1:1 blob-to-song mapping.
+	// POST /synth: send pending requests (or current form) to the server.
 	// synth params (batch, seed, steps, CFG, shift) come from the form, not from pending.
+	// server groups by request and expands synth_batch_size for GPU batching.
+	// webui resolves seeds and predicts the expanded list for SongCard mapping.
 	async function synthesize() {
 		busy = true;
 		try {
@@ -163,21 +164,32 @@
 			const reqs: AceRequest[] =
 				app.pendingRequests.length > 0 ? $state.snapshot(app.pendingRequests) : [buildRequest()];
 
-			// read synth params from the form (global, not per-pending)
+			// read synth params from the form (global, not per-pending).
 			const synthBatch = Math.max(1, Number(app.request.synth_batch_size) || 1);
 			const userSeed = Number(app.request.seed);
 			const hasSeed = Number.isFinite(userSeed) && userSeed >= 0;
+			const synthParams: Partial<AceRequest> = {};
+			const steps = num(app.request.inference_steps);
+			if (steps != null) synthParams.inference_steps = steps;
+			const cfg = num(app.request.guidance_scale);
+			if (cfg != null) synthParams.guidance_scale = cfg;
+			const sh = num(app.request.shift);
+			if (sh != null) synthParams.shift = sh;
 
-			// expand: each pending x synthBatch variations with consecutive seed
+			// resolve seeds, build server payload and local expanded list for SongCard mapping.
+			// server receives synth_batch_size and expands internally (groups by T for GPU batch).
+			// webui predicts the same expansion: seed, seed+1, ..., seed+N-1.
+			const toSend: AceRequest[] = [];
 			const expanded: AceRequest[] = [];
 			for (const r of reqs) {
 				const base = hasSeed ? userSeed : Math.floor(Math.random() * 0x100000000);
+				toSend.push({ ...r, ...synthParams, seed: base, synth_batch_size: synthBatch });
 				for (let i = 0; i < synthBatch; i++) {
-					expanded.push({ ...r, seed: base + i, synth_batch_size: 1 });
+					expanded.push({ ...r, ...synthParams, seed: base + i, synth_batch_size: 1 });
 				}
 			}
 
-			const blobs = await synthGenerate(expanded, app.format);
+			const blobs = await synthGenerate(toSend, app.format);
 			const now = Date.now();
 			const baseName = app.name || 'Untitled';
 			for (let i = blobs.length - 1; i >= 0; i--) {

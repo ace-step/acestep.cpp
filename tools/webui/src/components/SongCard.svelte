@@ -18,6 +18,8 @@
 	function load() {
 		app.name = song.name;
 		app.request = { ...song.request };
+		app.pendingRequests = [];
+		app.pendingIndex = 0;
 	}
 
 	function downloadAudio() {
