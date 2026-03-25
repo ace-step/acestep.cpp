@@ -118,7 +118,7 @@ def run_ggml(dump_dir, req, cfg, gguf_path, lora_dir=None):
     cmd = [
         ggml_bin,
         "--dit", gguf_path,
-        "--text-encoder", "../models/Qwen3-Embedding-0.6B-BF16.gguf",
+        "--embedding", "../models/Qwen3-Embedding-0.6B-BF16.gguf",
         "--vae", "../models/vae-BF16.gguf",
         "--request", request_json,
         "--dump", dump_dir,

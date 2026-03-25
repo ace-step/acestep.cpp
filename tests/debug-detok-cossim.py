@@ -66,7 +66,7 @@ def run_ggml(request_path, dump_dir):
     cmd = [
         GGML_BIN,
         "--dit", DIT_GGUF,
-        "--text-encoder", QWEN_GGUF,
+        "--embedding", QWEN_GGUF,
         "--vae", VAE_GGUF,
         "--request", request_path,
         "--dump", dump_dir,

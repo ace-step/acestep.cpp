@@ -291,7 +291,7 @@ int ace_understand_generate(AceUnderstand *    ctx,
         fprintf(stderr, "[Request] %zu codes from request\n", codes.size());
     }
 
-    // --dump without --model: tok-only mode, skip LM
+    // --dump without --lm: tok-only mode, skip LM
     if (!ctx->have_lm) {
         request_init(out);
         std::string codes_str;
