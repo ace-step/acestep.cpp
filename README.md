@@ -179,7 +179,8 @@ cd examples
 ./partial.sh                   # caption + lyrics + duration
 ./full.sh                      # all metadata provided
 ./dit-only.sh                  # skip LLM, DiT from noise
-./server.sh                    # start HTTP server (all pipelines, batch=2)
+./server-turbo.sh              # start HTTP server (turbo model)
+./server-sft.sh                # start HTTP server (SFT model)
 ./client.sh                    # test server (single song)
 ./client-batch.py              # test server batch (2 songs)
 ./client-understand.sh <audio> # test /understand + /synth roundtrip
@@ -586,7 +587,7 @@ Server:
   --host <addr>           Listen address (default: 127.0.0.1)
   --port <N>              Listen port (default: 8080)
   --max-batch <N>         LM batch limit (default: 1)
-  --sleep <N>             Unload models after N sec. (default: 0 = off)
+  --sleep <N>             Unload after N sec. 0=instant (default), -1=off
 
 Debug:
   --no-fsm                Disable FSM constrained decoding
@@ -598,13 +599,16 @@ Debug:
 Examples:
 
 ```bash
-# full mode (~19 GB VRAM)
+# all pipelines (default: lazy load, one pipeline at a time)
 ace-server --lm lm.gguf --embedding emb.gguf --dit dit.gguf --vae vae.gguf
 
-# synth only (~12 GB, /lm and /understand return 501)
+# all pipelines, always loaded (--sleep -1)
+ace-server --lm lm.gguf --embedding emb.gguf --dit dit.gguf --vae vae.gguf --sleep -1
+
+# synth only (/lm and /understand return 501)
 ace-server --embedding emb.gguf --dit dit.gguf --vae vae.gguf
 
-# LM only (~7 GB, /synth returns 501, /understand codes-only)
+# LM only (/synth returns 501, /understand codes-only)
 ace-server --lm lm.gguf
 ```
 
@@ -665,10 +669,12 @@ Each handler uses `try_lock`: if the GPU is busy, the client gets an
 instant 503 with `Retry-After`. No request ever blocks waiting for
 another to finish.
 
-`--sleep N` unloads models after N seconds with no requests. The next
-request reloads from disk (a few seconds on NVMe). If reload fails, the
-process exits (let systemd/docker restart it). `--sleep 0` disables
-this (default).
+`--sleep N` unloads models after N seconds with no requests. The default
+(`--sleep 0`) unloads immediately after each request, so LM and synth
+never coexist in memory. `--sleep -1` disables unloading (all models
+stay loaded). The next request after unloading reloads from disk (a few
+seconds on NVMe). If reload fails, the process exits (let systemd/docker
+restart it).
 
 Request bodies are limited to 120 MB (enough for a 10-minute WAV upload
 via multipart).

@@ -349,7 +349,7 @@ static void sleep_synth(void) {
 static void watchdog_thread(void) {
     while (!g_stop_watchdog.load(std::memory_order_relaxed)) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        if (g_sleep_sec <= 0) {
+        if (g_sleep_sec < 0) {
             continue;
         }
 
@@ -851,7 +851,7 @@ static void usage(const char * prog) {
             "  --host <addr>           Listen address (default: 127.0.0.1)\n"
             "  --port <N>              Listen port (default: 8080)\n"
             "  --max-batch <N>         LM batch limit (default: 1)\n"
-            "  --sleep <N>             Unload models after N sec. (default: 0 = off)\n"
+            "  --sleep <N>             Unload after N sec. 0=instant (default), -1=off\n"
             "\n"
             "Debug:\n"
             "  --no-fsm                Disable FSM constrained decoding\n"
@@ -964,47 +964,62 @@ int main(int argc, char ** argv) {
         g_max_batch = 9;
     }
 
-    // load LM pipeline (optional)
+    // always set max_batch so wake_lm() picks it up
+    g_lm_params.max_batch = g_max_batch;
+
+    // always init understand params so wake_lm() can reload it.
+    // dit_path/vae_path are NULL when synth not configured (codes-only mode).
     if (g_have_lm) {
-        g_lm_params.max_batch = g_max_batch;
-        fprintf(stderr, "[Server] Loading LM (max_batch=%d, max_seq=%d)...\n", g_max_batch, g_lm_params.max_seq);
-        g_ctx_lm = ace_lm_load(&g_lm_params);
-        if (!g_ctx_lm) {
-            fprintf(stderr, "[Server] FATAL: LM load failed\n");
-            return 1;
-        }
-    }
-
-    // load synth pipeline (optional)
-    if (g_have_synth) {
-        fprintf(stderr, "[Server] Loading synth...\n");
-        g_ctx_synth = ace_synth_load(&g_synth_params);
-        if (!g_ctx_synth) {
-            fprintf(stderr, "[Server] FATAL: synth load failed\n");
-            ace_lm_free(g_ctx_lm);
-            return 1;
-        }
-    }
-
-    // load understand pipeline when LM is available.
-    // shares the Qwen3 model from pipeline-lm to save ~5GB VRAM.
-    // when synth is also loaded, understand gets DiT + VAE for
-    // audio input mode. without synth, only codes-only mode works.
-    if (g_ctx_lm) {
         ace_understand_default_params(&g_und_params);
-        g_und_params.shared_model = ace_lm_get_model(g_ctx_lm);
-        g_und_params.shared_bpe   = ace_lm_get_bpe(g_ctx_lm);
-        g_und_params.dit_path     = g_synth_params.dit_path;  // NULL when synth not loaded
-        g_und_params.vae_path     = g_synth_params.vae_path;  // NULL when synth not loaded
-        g_und_params.use_fa       = g_lm_params.use_fa;
-        g_und_params.use_fsm      = g_lm_params.use_fsm;
-        fprintf(stderr, "[Server] Loading understand%s...\n", g_have_synth ? " (audio + codes)" : " (codes-only)");
-        g_ctx_understand = ace_understand_load(&g_und_params);
-        if (!g_ctx_understand) {
-            fprintf(stderr, "[Server] FATAL: understand load failed\n");
-            ace_synth_free(g_ctx_synth);
-            ace_lm_free(g_ctx_lm);
-            return 1;
+        g_und_params.dit_path = g_synth_params.dit_path;
+        g_und_params.vae_path = g_synth_params.vae_path;
+        g_und_params.use_fa   = g_lm_params.use_fa;
+        g_und_params.use_fsm  = g_lm_params.use_fsm;
+    }
+
+    // when --sleep is set (>= 0), skip initial load. models load on first request
+    // and unload after idle timeout. with --sleep 0 (default), pipelines unload
+    // immediately after use, so LM and synth never coexist in memory.
+    // --sleep -1 disables sleep (all models stay loaded).
+    if (g_sleep_sec >= 0) {
+        fprintf(stderr, "[Server] Lazy mode: models will load on first request\n");
+    } else {
+        // load everything at startup
+
+        // load LM pipeline (optional)
+        if (g_have_lm) {
+            fprintf(stderr, "[Server] Loading LM (max_batch=%d, max_seq=%d)...\n", g_max_batch, g_lm_params.max_seq);
+            g_ctx_lm = ace_lm_load(&g_lm_params);
+            if (!g_ctx_lm) {
+                fprintf(stderr, "[Server] FATAL: LM load failed\n");
+                return 1;
+            }
+        }
+
+        // load synth pipeline (optional)
+        if (g_have_synth) {
+            fprintf(stderr, "[Server] Loading synth...\n");
+            g_ctx_synth = ace_synth_load(&g_synth_params);
+            if (!g_ctx_synth) {
+                fprintf(stderr, "[Server] FATAL: synth load failed\n");
+                ace_lm_free(g_ctx_lm);
+                return 1;
+            }
+        }
+
+        // load understand pipeline when LM is available.
+        // shares the Qwen3 model from pipeline-lm to save ~5GB VRAM.
+        if (g_ctx_lm) {
+            g_und_params.shared_model = ace_lm_get_model(g_ctx_lm);
+            g_und_params.shared_bpe   = ace_lm_get_bpe(g_ctx_lm);
+            fprintf(stderr, "[Server] Loading understand%s...\n", g_have_synth ? " (audio + codes)" : " (codes-only)");
+            g_ctx_understand = ace_understand_load(&g_und_params);
+            if (!g_ctx_understand) {
+                fprintf(stderr, "[Server] FATAL: understand load failed\n");
+                ace_synth_free(g_ctx_synth);
+                ace_lm_free(g_ctx_lm);
+                return 1;
+            }
         }
     }
 
@@ -1047,7 +1062,7 @@ int main(int argc, char ** argv) {
 
     // start watchdog thread for sleep/wake
     std::thread watchdog;
-    if (g_sleep_sec > 0) {
+    if (g_sleep_sec >= 0) {
         g_lm_last_use    = std::chrono::steady_clock::now();
         g_synth_last_use = std::chrono::steady_clock::now();
         watchdog         = std::thread(watchdog_thread);
