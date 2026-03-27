@@ -6,18 +6,33 @@
 	let container = $state<HTMLPreElement>();
 
 	$effect(() => {
-		const es = new EventSource('logs');
-		es.onmessage = (e: MessageEvent) => {
-			lines.push(e.data);
-			if (lines.length > 500) lines.splice(0, lines.length - 500);
-			const el = container;
-			if (app.logsOpen && el) {
-				requestAnimationFrame(() => {
-					el.scrollTop = el.scrollHeight;
-				});
-			}
+		let es: EventSource | null = null;
+		let timer = 0;
+
+		function connect() {
+			es = new EventSource('logs');
+			es.onmessage = (e: MessageEvent) => {
+				lines.push(e.data);
+				if (lines.length > 500) lines.splice(0, lines.length - 500);
+				const el = container;
+				if (app.logsOpen && el) {
+					requestAnimationFrame(() => {
+						el.scrollTop = el.scrollHeight;
+					});
+				}
+			};
+			es.onerror = () => {
+				es?.close();
+				es = null;
+				timer = setTimeout(connect, 2000) as unknown as number;
+			};
+		}
+
+		connect();
+		return () => {
+			clearTimeout(timer);
+			es?.close();
 		};
-		return () => es.close();
 	});
 </script>
 
