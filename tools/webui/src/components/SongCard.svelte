@@ -18,12 +18,22 @@
 	function toggleRef() {
 		if (isRef) {
 			app.refSongId = null;
+			app.refRangeStart = -1;
+			app.refRangeEnd = -1;
 			rangeStart = -1;
 			rangeEnd = -1;
 		} else {
 			app.refSongId = song.id ?? null;
 		}
 	}
+
+	// sync local range to global when this song is the ref
+	$effect(() => {
+		if (isRef) {
+			app.refRangeStart = rangeStart;
+			app.refRangeEnd = rangeEnd;
+		}
+	});
 
 	function toggle() {
 		playing = !playing;

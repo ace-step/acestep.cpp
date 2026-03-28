@@ -52,7 +52,9 @@ export const app = $state({
 	toast: '' as string,
 	pendingRequests: [] as AceRequest[],
 	pendingIndex: 0,
-	refSongId: null as number | null
+	refSongId: null as number | null,
+	refRangeStart: -1,
+	refRangeEnd: -1
 });
 
 let toastTimer = 0;
