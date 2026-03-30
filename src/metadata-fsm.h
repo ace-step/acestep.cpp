@@ -85,7 +85,14 @@ struct MetadataFSM {
     // When active, apply_mask whitelists only the next token, update consumes it.
     // After the queue is exhausted, we transition to the next field.
     std::vector<int> inject_queue;
-    std::string      forced_language;  // set by force_language(), injected at LANGUAGE_VALUE
+
+    // Forced values: set by force_field(), injected when FSM reaches the VALUE state.
+    // Conditions the KV cache on the user's values so lyrics and codes match.
+    std::string forced_bpm;
+    std::string forced_duration;
+    std::string forced_keyscale;
+    std::string forced_language;
+    std::string forced_timesig;
 
     static std::vector<int> tokenize_strip(BPETokenizer & bpe, const std::string & full, const std::string & prefix) {
         std::vector<int> full_tok = bpe_encode(&bpe, full, false);
@@ -215,18 +222,43 @@ struct MetadataFSM {
         pending_field_name.clear();
         value_acc.clear();
         inject_queue.clear();
-        // forced_language is NOT cleared: it persists across resets
-        // (set once at setup, applies to every generate call)
+        // forced_* values are NOT cleared: they persist across resets
+        // (set once at setup, apply to every generate call)
     }
 
-    // Force FSM to inject a specific language value.
+    // Force FSM to inject a specific value for a metadata field.
     // The value is tokenized and force-injected when the FSM reaches
-    // LANGUAGE_VALUE, matching the Python FSM's token injection behavior.
-    // Also rebuilds the prefix tree as a safety net.
-    void force_language(BPETokenizer & bpe, const std::string & lang) {
-        forced_language = lang;
-        language_tree   = PrefixTree();
-        build_value_tree(bpe, language_tree, "language:", { lang });
+    // the VALUE state, conditioning the KV cache on the user's value.
+    void force_field(BPETokenizer & bpe, State value_state, const std::string & val) {
+        switch (value_state) {
+            case BPM_VALUE:
+                forced_bpm = val;
+                bpm_tree   = PrefixTree();
+                build_value_tree(bpe, bpm_tree, "bpm:", { val });
+                break;
+            case DURATION_VALUE:
+                forced_duration = val;
+                duration_tree   = PrefixTree();
+                build_value_tree(bpe, duration_tree, "duration:", { val });
+                break;
+            case KEYSCALE_VALUE:
+                forced_keyscale = val;
+                keyscale_tree   = PrefixTree();
+                build_value_tree(bpe, keyscale_tree, "keyscale:", { val });
+                break;
+            case LANGUAGE_VALUE:
+                forced_language = val;
+                language_tree   = PrefixTree();
+                build_value_tree(bpe, language_tree, "language:", { val });
+                break;
+            case TIMESIG_VALUE:
+                forced_timesig = val;
+                timesig_tree   = PrefixTree();
+                build_value_tree(bpe, timesig_tree, "timesignature:", { val });
+                break;
+            default:
+                break;
+        }
     }
 
     const std::vector<int> * current_name_tokens() const {
@@ -319,17 +351,42 @@ struct MetadataFSM {
             return;
         }
 
-        // Language injection: when entering LANGUAGE_VALUE with a forced
-        // language, tokenize " value\n" and activate inject queue.
-        // Matches Python: user_provided_metadata["language"] -> token queue.
-        if (state == LANGUAGE_VALUE && !forced_language.empty() && bpe_ptr) {
-            std::string      text  = "language:" + forced_language + "\n";
-            std::vector<int> vtoks = tokenize_strip(*bpe_ptr, text, "language:");
+        // Value injection: force user-provided values into the KV cache.
+        // Conditions the LM on the correct metadata so lyrics and codes match.
+        const char *        prefix = nullptr;
+        const std::string * forced = nullptr;
+        switch (state) {
+            case BPM_VALUE:
+                prefix = "bpm:";
+                forced = &forced_bpm;
+                break;
+            case DURATION_VALUE:
+                prefix = "duration:";
+                forced = &forced_duration;
+                break;
+            case KEYSCALE_VALUE:
+                prefix = "keyscale:";
+                forced = &forced_keyscale;
+                break;
+            case LANGUAGE_VALUE:
+                prefix = "language:";
+                forced = &forced_language;
+                break;
+            case TIMESIG_VALUE:
+                prefix = "timesignature:";
+                forced = &forced_timesig;
+                break;
+            default:
+                break;
+        }
+        if (prefix && forced && !forced->empty() && bpe_ptr) {
+            std::string      text  = std::string(prefix) + *forced + "\n";
+            std::vector<int> vtoks = tokenize_strip(*bpe_ptr, text, prefix);
             if (!vtoks.empty()) {
                 inject_queue = vtoks;
-                int forced   = inject_queue[0];
+                int ftok     = inject_queue[0];
                 for (int v = 0; v < vocab_size; v++) {
-                    if (v != forced) {
+                    if (v != ftok) {
                         logits[v] = -1e9f;
                     }
                 }
