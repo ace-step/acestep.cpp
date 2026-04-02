@@ -311,9 +311,9 @@
 				synthParams.lora = app.request.lora;
 			const loraScale = num(app.request.lora_scale);
 			if (loraScale != null) synthParams.lora_scale = loraScale;
-			// repaint/complete: inject range from source audio selection
+			// repaint/lego: inject range from source audio selection (optional for lego)
 			if (
-				(t === TASK_REPAINT || t === TASK_COMPLETE) &&
+				(t === TASK_REPAINT || t === TASK_LEGO) &&
 				app.srcRangeStart >= 0 &&
 				app.srcRangeEnd > app.srcRangeStart
 			) {
