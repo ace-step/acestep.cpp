@@ -1,4 +1,4 @@
-// pipeline-understand.cpp - ACE-Step reverse pipeline (audio -> metadata)
+// pipeline-understand.cpp: ACE-Step reverse pipeline (audio -> metadata)
 //
 // Wraps VAE encoder, FSQ tokenizer, and Qwen3 LM for audio understanding:
 // audio -> latents -> codes -> LM understand -> metadata + lyrics + caption.

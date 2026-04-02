@@ -1,9 +1,7 @@
 #pragma once
-//
-// request.h - AceStep generation request (JSON serialization)
+// request.h: AceStep generation request (JSON serialization)
 //
 // Pure data container + JSON read/write. Zero business logic.
-//
 
 #include <cstdint>
 #include <cstdio>
@@ -53,6 +51,8 @@ struct AceRequest {
     // -1 on start means 0s, -1 on end means source duration.
     float repainting_start;  // -1
     float repainting_end;    // -1
+
+    // repaint/lego region params (Python _resolve_repaint_config balanced/0.5 defaults)
 
     // task type: "" = auto-detect from data, or one of:
     // text2music, cover, repaint, lego, extract, complete

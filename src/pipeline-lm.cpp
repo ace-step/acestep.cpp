@@ -274,8 +274,8 @@ static std::vector<std::string> run_phase2_batch(Qwen3LM *                      
                                                  float                          cfg_scale,
                                                  const char *                   negative_prompt,
                                                  bool                           use_batch_cfg,
-                                                 bool (*cancel)(void *) = nullptr,
-                                                 void * cancel_data     = nullptr) {
+                                                 bool (*cancel)(void *),
+                                                 void * cancel_data) {
     int  V             = m->cfg.vocab_size;
     bool use_cfg       = cfg_scale > 1.0f;
     bool shared_prompt = ((int) aces.size() == 1);

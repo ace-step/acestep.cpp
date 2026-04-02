@@ -1,5 +1,4 @@
 #pragma once
-//
 // philox.h  Philox4x32-10 PRNG + Box-Muller normal distribution
 //
 // Matches PyTorch CUDA torch.randn() output (cuRAND Philox4_32_10).
@@ -8,7 +7,6 @@
 // CUDA kernel mapping (normal distribution):
 //   element[k] = philox_normal4(seed, subsequence=k, offset=0)[0]
 //   vals[1..3] discarded (one thread per element, one normal per thread).
-//
 
 #include <cmath>
 #include <cstdint>

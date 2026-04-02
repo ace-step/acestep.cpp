@@ -301,7 +301,7 @@ static struct ggml_tensor * vae_conv_t1d(struct ggml_context * ctx,
     // Step 1: Transpose x from [T_in, IC] to [IC, T_in] (contiguous copy)
     struct ggml_tensor * xt = ggml_cont(ctx, ggml_transpose(ctx, x));
 
-    // Step 2: GEMM - contracts over IC (ne[0] of both)
+    // Step 2: GEMM: contracts over IC (ne[0] of both)
     // w: [IC, K*OC]  xt: [IC, T_in]  ->  col: [K*OC, T_in]
     struct ggml_tensor * col = ggml_mul_mat(ctx, w, xt);
 

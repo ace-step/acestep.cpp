@@ -42,10 +42,16 @@ inline constexpr const char * DIT_INSTR_REPAINT    = "Repaint the mask area base
 
 // DiT instructions with track name (UPPERCASE). Inline helpers return std::string.
 static inline std::string dit_instr_lego(const std::string & track) {
+    if (track.empty()) {
+        return "Generate the track based on the audio context:";
+    }
     return "Generate the " + track + " track based on the audio context:";
 }
 
 static inline std::string dit_instr_extract(const std::string & track) {
+    if (track.empty()) {
+        return "Extract the track from the audio:";
+    }
     return "Extract the " + track + " track from the audio:";
 }
 

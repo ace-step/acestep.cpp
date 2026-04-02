@@ -1,10 +1,8 @@
 #pragma once
-//
-// pipeline-lm.h - ACE-Step LM pipeline
+// pipeline-lm.h: ACE-Step LM pipeline
 //
 // Loads Qwen3 causal LM once, then enriches requests:
 // text caption -> metadata + lyrics + audio codes.
-//
 
 #include "request.h"
 #include "task-types.h"

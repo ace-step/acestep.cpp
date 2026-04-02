@@ -1,5 +1,5 @@
 #pragma once
-// pipeline-understand.h - ACE-Step reverse pipeline (audio -> metadata)
+// pipeline-understand.h: ACE-Step reverse pipeline (audio -> metadata)
 //
 // Audio -> VAE encode -> FSQ tokenize -> LM understand -> metadata + lyrics.
 // Or: audio_codes from request -> LM understand -> metadata + lyrics.

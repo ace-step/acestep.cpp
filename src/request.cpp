@@ -1,6 +1,4 @@
-//
-// request.cpp - AceStep request JSON read/write (yyjson)
-//
+// request.cpp: AceStep request JSON read/write (yyjson)
 
 #include "request.h"
 

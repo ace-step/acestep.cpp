@@ -1,10 +1,8 @@
 #pragma once
-//
-// pipeline-synth.h - ACE-Step synthesis pipeline
+// pipeline-synth.h: ACE-Step synthesis pipeline
 //
 // Loads DiT + TextEncoder + CondEncoder + VAE once, then generates audio
 // from enriched requests (output of pipeline-lm or pre-filled JSON).
-//
 
 #include "request.h"
 

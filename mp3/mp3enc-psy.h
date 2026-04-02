@@ -1,5 +1,4 @@
 #pragma once
-
 // mp3enc-psy.h
 // Psychoacoustic model for MP3 encoding.
 // Computes masking thresholds per scalefactor band from MDCT coefficients.
